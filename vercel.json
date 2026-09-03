@@ -1,0 +1,55 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/shorts",
+      "destination": "/shorts.html"
+    },
+    {
+      "source": "/watch",
+      "destination": "/watch.html"
+    },
+    {
+      "source": "/channel",
+      "destination": "/channel.html"
+    },
+    {
+      "source": "/upload",
+      "destination": "/upload.html"
+    },
+    {
+      "source": "/creator",
+      "destination": "/creator.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/history",
+      "destination": "/history.html"
+    },
+    {
+      "source": "/playlists",
+      "destination": "/playlists.html"
+    },
+    {
+      "source": "/subscriptions",
+      "destination": "/subscriptions.html"
+    },
+    {
+      "source": "/notifications",
+      "destination": "/notifications.html"
+    },
+    {
+      "source": "/builder",
+      "destination": "/builder.html"
+    }
+  ]
+}

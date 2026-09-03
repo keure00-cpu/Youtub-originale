@@ -1,0 +1,71 @@
+<!doctype html><html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>YT2 Video Builder</title><link rel="stylesheet" href="/assets/style.css">
+<style>
+.builder{max-width:1250px;margin:auto;padding:28px}.builder-grid{display:grid;grid-template-columns:1fr 360px;gap:24px}
+.panel{background:#fff;border:1px solid #e6e6e6;border-radius:16px;padding:20px}.video-list{display:grid;gap:10px;max-height:520px;overflow:auto}
+.video-item{display:flex;gap:12px;align-items:center;border:1px solid #e5e5e5;border-radius:12px;padding:10px;cursor:pointer}
+.video-item.selected{outline:2px solid #ff0033}.video-item img,.mini-thumb{width:100px;height:58px;object-fit:cover;border-radius:8px;background:#ddd}
+.timeline{display:flex;gap:10px;overflow-x:auto;padding:12px 0;min-height:100px}.clip{min-width:180px;border:1px solid #ddd;border-radius:12px;padding:8px;background:#fafafa;cursor:grab}
+.clip img{width:100%;height:80px;object-fit:cover;border-radius:8px}.clip button{border:0;background:transparent;cursor:pointer}
+.form-grid{display:grid;gap:12px}.form-grid input,.form-grid textarea,.form-grid select{width:100%;box-sizing:border-box;padding:12px;border:1px solid #ddd;border-radius:10px}
+.preview{width:100%;aspect-ratio:16/9;background:#111;border-radius:14px;overflow:hidden}.preview video{width:100%;height:100%;object-fit:contain}
+.progress{height:10px;background:#eee;border-radius:999px;overflow:hidden}.progress i{display:block;height:100%;width:0;background:#ff0033}
+@media(max-width:900px){.builder-grid{grid-template-columns:1fr}.builder{padding:16px}}
+</style></head><body>
+<header class="topbar"><a class="logo" href="/">YouTube<span>2</span></a><div class="top-actions"><a class="login-btn" href="/creator.html">Studio</a><a class="upload-btn" href="/upload.html">＋ Upload</a></div></header>
+<main class="builder"><div class="section-head"><div><h1>YT2 Video Builder</h1><p class="muted">Transforme seus vídeos em um vídeo longo.</p></div></div>
+<section class="panel" style="margin-bottom:20px"><h2>1. Monte sua sequência</h2><p class="muted">Selecione vídeos publicados no seu canal.</p><div id="sourceVideos" class="video-list"><div class="empty">Carregando...</div></div></section>
+<section class="panel" style="margin-bottom:20px"><h2>2. Linha do tempo</h2><div id="timeline" class="timeline"><div class="empty">Nenhum clipe selecionado.</div></div>
+<div class="dash-actions"><button id="clear" class="secondary">Limpar</button><button id="previewBtn" class="primary">Pré-visualizar</button></div></section>
+<div class="builder-grid"><section class="panel"><h2>3. Configurações</h2><form id="builderForm" class="form-grid">
+<input id="title" maxlength="120" required placeholder="Título do vídeo longo"><textarea id="description" rows="5" placeholder="Descrição"></textarea>
+<select id="visibility"><option value="public">Público</option><option value="unlisted">Não listado</option><option value="private">Privado</option></select>
+<select id="transition"><option value="cut">Corte simples</option><option value="fade">Fade</option></select>
+<label><input id="music" type="checkbox"> Música de fundo</label><label><input id="captions" type="checkbox"> Legendas</label>
+<button class="primary red wide" type="submit">Criar vídeo longo</button></form>
+<div id="progressWrap" style="display:none;margin-top:20px"><p id="status"></p><div class="progress"><i id="bar"></i></div></div></section>
+<section class="panel"><h2>Prévia</h2><div class="preview"><video id="preview" controls playsinline></video></div><p id="previewInfo" class="muted">Selecione um clipe para começar.</p></section></div></main>
+<script type="module">
+import {supabase} from './assets/supabase.js';
+let user=null,videos=[],sequence=[];
+const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const thumb=v=>v.thumbnail_url?`<img src="${esc(v.thumbnail_url)}">`:`<div class="mini-thumb"></div>`;
+async function init(){
+ const {data:{user:u}}=await supabase.auth.getUser(); if(!u){location.href='/login.html';return} user=u;
+ const {data,error}=await supabase.from('videos').select('*').eq('user_id',u.id).order('created_at',{ascending:false});
+ if(error){$('sourceVideos').innerHTML='<div class="empty">Não foi possível carregar seus vídeos.</div>';return}
+ videos=data||[]; renderSources();
+}
+function renderSources(){
+ $('sourceVideos').innerHTML=videos.length?videos.map(v=>`<div class="video-item ${sequence.includes(v.id)?'selected':''}" data-id="${v.id}">${thumb(v)}<div style="flex:1"><b>${esc(v.title)}</b><p class="muted">${Number(v.views||0).toLocaleString('pt-BR')} visualizações</p></div><b>${sequence.includes(v.id)?'✓':''}</b></div>`).join(''):'<div class="empty">Publique um vídeo primeiro.</div>';
+ $('sourceVideos').querySelectorAll('.video-item').forEach(el=>el.onclick=()=>{const id=el.dataset.id,i=sequence.indexOf(id);i>=0?sequence.splice(i,1):sequence.push(id);renderSources();renderTimeline()});
+}
+function renderTimeline(){
+ $('timeline').innerHTML=sequence.length?sequence.map((id,i)=>{const v=videos.find(x=>x.id===id);return `<div class="clip" draggable="true" data-id="${id}">${thumb(v)}<div style="display:flex;justify-content:space-between"><b>${i+1}. ${esc(v.title)}</b><button data-remove="${id}">✕</button></div></div>`}).join(''):'<div class="empty">Nenhum clipe selecionado.</div>';
+ $('timeline').querySelectorAll('[data-remove]').forEach(b=>b.onclick=e=>{e.stopPropagation();sequence=sequence.filter(x=>x!==b.dataset.remove);renderSources();renderTimeline()});
+ let dragId=null;$('timeline').querySelectorAll('.clip').forEach(el=>{el.ondragstart=()=>dragId=el.dataset.id;el.ondragover=e=>e.preventDefault();el.ondrop=e=>{e.preventDefault();if(!dragId||dragId===el.dataset.id)return;let a=sequence.indexOf(dragId),b=sequence.indexOf(el.dataset.id);sequence.splice(a,1);sequence.splice(b,0,dragId);renderTimeline();renderSources()}});
+}
+$('clear').onclick=()=>{sequence=[];renderSources();renderTimeline()};
+$('previewBtn').onclick=()=>{const v=videos.find(x=>x.id===sequence[0]);if(!v?.video_url){$('previewInfo').textContent='O primeiro clipe não possui URL.';return}$('preview').src=v.video_url;$('preview').load();$('preview').play().catch(()=>{});$('previewInfo').textContent='Prévia do primeiro clipe: '+v.title};
+$('builderForm').onsubmit=async e=>{e.preventDefault();if(!sequence.length)return alert('Selecione pelo menos um vídeo.');$('progressWrap').style.display='block';$('bar').style.width='20%';$('status').textContent='Salvando projeto...';
+ const clips=sequence.map((id,position)=>{const v=videos.find(x=>x.id===id);return {video_id:id,position,video_url:v.video_url,title:v.title}});
+ const manifest={version:1,type:'yt2-long-video',owner_id:user.id,title:$('title').value.trim(),description:$('description').value,visibility:$('visibility').value,transition:$('transition').value,music:$('music').checked,captions:$('captions').checked,clips,created_at:new Date().toISOString()};
+ const {data:project,error}=await supabase.from('video_projects').insert({user_id:user.id,title:manifest.title,description:manifest.description,manifest,status:'queued'}).select('id').single();
+ if(error){localStorage.setItem('yt2_pending_builder',JSON.stringify(manifest));$('status').textContent='Projeto preparado. Execute o SQL do projeto.';$('bar').style.width='100%';return}
+ $('bar').style.width='25%';$('status').textContent='Projeto criado. Aguardando o renderizador...'; await pollProject(project?.id || null);
+};
+async function pollProject(id){
+ if(!id){$('status').textContent='Projeto criado, mas o ID não foi retornado. Verifique o Supabase.';return}
+ for(let i=0;i<180;i++){
+   const {data:p,error}=await supabase.from('video_projects').select('status,output_video_url,error_message').eq('id',id).maybeSingle();
+   if(error){$('status').textContent='Aguardando fila de renderização...';}
+   else if(p?.status==='ready'){ $('bar').style.width='100%'; $('status').innerHTML=`✓ Vídeo longo pronto! <a href="${p.output_video_url}" target="_blank" rel="noopener">Abrir MP4</a>`; setTimeout(()=>location.href='/creator.html',2500); return; }
+   else if(p?.status==='failed'){ $('bar').style.width='100%'; $('status').textContent='Renderização falhou: '+(p.error_message||'erro desconhecido'); return; }
+   else { $('bar').style.width=`${25+Math.min(70,Math.round(i/180*70))}%`; $('status').textContent=p?.status==='processing'?'Renderizando vídeo longo...':'Na fila de renderização...'; }
+   await new Promise(r=>setTimeout(r,5000));
+ }
+ $('status').textContent='O projeto continua na fila. Você pode fechar esta página; o worker continuará o processamento.';
+}
+init();
+</script></body></html>

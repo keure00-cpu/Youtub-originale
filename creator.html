@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>YouTube2 Studio</title><link rel="stylesheet" href="/assets/style.css"></head>
+<body>
+<header class="topbar"><a class="logo" href="/">YouTube<span>2</span></a><div class="top-actions"><a class="upload-btn" href="/upload.html">＋ Novo vídeo</a><button id="logout" class="login-btn">Sair</button></div></header>
+<main class="dashboard">
+<div class="section-head"><h2>YouTube2 Studio</h2><span id="account"></span></div>
+<section class="channel-banner"><div class="avatar" id="avatar">U</div><div><h1 id="channelName">Seu canal</h1><p id="handle" class="muted"></p><p>Gerencie seus vídeos, público e monetização.</p></div></section>
+<div class="dash-actions"><a class="primary red" href="/upload.html">＋ Publicar vídeo</a><a class="secondary" href="/builder.html">🎬 Criar vídeo longo</a><a class="secondary" href="/channel.html">Ver canal</a></div>
+<section class="section"><div class="section-head"><h2>Visão geral</h2></div><div class="grid">
+<div class="playlist"><div class="playlist-info"><p class="muted">Vídeos</p><h2 id="videoCount">0</h2></div></div>
+<div class="playlist"><div class="playlist-info"><p class="muted">Visualizações</p><h2 id="views">0</h2></div></div>
+<div class="playlist"><div class="playlist-info"><p class="muted">Receita estimada</p><h2 id="revenue">R$ 0,00</h2></div></div>
+</div></section>
+<section class="section"><div class="section-head"><h2>Monetização</h2></div>
+<div class="channel-banner"><div class="avatar">R$</div><div><h3 id="monStatus">Verificando...</h3><p class="muted">A monetização real depende de aprovação de um provedor de anúncios/pagamentos. O YouTube2 não inventa pagamentos.</p><button id="monBtn" class="primary">Solicitar análise</button> <button id="stripeOnboard" class="secondary">Configurar recebimento</button></div></div></section>
+<section class="section"><div class="section-head"><h2>Saldo</h2></div><div class="grid"><div class="playlist"><div class="playlist-info"><p class="muted">Disponível para saque</p><h2 id="balance">R$ 0,00</h2></div></div><div class="playlist"><div class="playlist-info"><p class="muted">Pendente</p><h2 id="pending">R$ 0,00</h2></div></div></div></section><section class="section"><div class="section-head"><h2>Histórico de pagamentos</h2></div><div id="payoutHistory" class="grid"></div></section><section class="section"><h2>Vídeos longos em produção</h2><div id="projects" class="grid"></div></section><section class="section"><h2>Seus vídeos</h2><div id="myVideos" class="grid"></div></section>
+</main>
+<script type="module">
+import {supabase} from './assets/supabase.js';
+const projectsEl=document.getElementById('projects');
+const money=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n||0));
+async function boot(){
+ const {data:{user}}=await supabase.auth.getUser(); if(!user){location.href='/login.html';return}
+ account.textContent=user.email;
+ const {data:p}=await supabase.from('profiles').select('*').eq('id',user.id).maybeSingle();
+ channelName.textContent=p?.display_name||'Seu canal'; handle.textContent=p?.username?'@'+p.username:'';
+ avatar.textContent=(p?.display_name||'U')[0].toUpperCase();
+ const {data:vs}=await supabase.from('videos').select('*').eq('user_id',user.id).order('created_at',{ascending:false});
+ videoCount.textContent=vs?.length||0; views.textContent=(vs||[]).reduce((a,v)=>a+Number(v.views||0),0).toLocaleString('pt-BR');
+ const {data:e}=await supabase.from('video_earnings').select('estimated_revenue').eq('user_id',user.id);
+ revenue.textContent=money((e||[]).reduce((a,v)=>a+Number(v.estimated_revenue||0),0)); await loadBalance(user);
+ const {data:ps}=await supabase.from('payouts').select('amount,currency,status,created_at,paid_at').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20);
+ payoutHistory.innerHTML=(ps||[]).map(p=>`<div class="playlist"><div class="playlist-info"><p>${money(p.amount)} ${p.currency}</p><h3>${p.status==='paid'?'Pago':p.status==='failed'?'Falhou':'Pendente'}</h3><small class="muted">${new Date(p.paid_at||p.created_at).toLocaleString('pt-BR')}</small></div></div>`).join('')||'<div class="empty">Nenhum pagamento ainda.</div>';
+ const {data:m}=await supabase.from('creator_monetization').select('*').eq('user_id',user.id).maybeSingle();
+ monStatus.textContent=m?.status==='approved'?'Monetização aprovada':m?.status==='pending'?'Análise pendente':'Ainda não habilitada';
+ const {data:projects}=await supabase.from('video_projects').select('id,title,status,output_video_url,error_message,created_at').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20);
+ projectsEl.innerHTML=(projects||[]).map(p=>`<div class="playlist"><div class="playlist-info"><h3>${p.title}</h3><p>${p.status==='ready'?'✓ Pronto':p.status==='processing'?'🎬 Renderizando...':p.status==='failed'?'❌ Falhou':'⏳ Na fila'}</p>${p.output_video_url?`<a href="${p.output_video_url}" target="_blank">Abrir vídeo</a>`:''}${p.error_message?`<small>${p.error_message}</small>`:''}</div></div>`).join('')||'<div class="empty">Nenhum projeto de vídeo longo.</div>';
+ myVideos.innerHTML=(vs||[]).map(v=>`<article class="card"><div class="thumb">${v.thumbnail_url?`<img src="${v.thumbnail_url}">`:''}</div><div class="card-body"><div><h3>${v.title}</h3><p>${Number(v.views||0).toLocaleString('pt-BR')} visualizações</p></div></div></article>`).join('')||'<div class="empty">Você ainda não publicou vídeos.</div>';
+}
+async function loadBalance(user){
+ const {data:b}=await supabase.from('creator_balances').select('available,pending,currency').eq('user_id',user.id).maybeSingle();
+ balance.textContent=money(b?.available||0); pending.textContent=money(b?.pending||0);
+}
+stripeOnboard.onclick=async()=>{
+ const {data:{user}}=await supabase.auth.getUser(); if(!user)return;
+ stripeOnboard.disabled=true; stripeOnboard.textContent='Abrindo...';
+ try{
+  const r=await fetch('/api/connect/onboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email,return_url:location.origin+'/creator.html',refresh_url:location.origin+'/creator.html'})});
+  const d=await r.json(); if(!r.ok) throw new Error(d.error||'Falha no Stripe');
+  await supabase.from('creator_payout_accounts').upsert({user_id:user.id,stripe_account_id:d.account_id},{onConflict:'user_id'});
+  location.href=d.url;
+ }catch(e){alert(e.message)}finally{stripeOnboard.disabled=false;stripeOnboard.textContent='Configurar recebimento'}
+};
+monBtn.onclick=async()=>{const {data:{user}}=await supabase.auth.getUser();if(!user)return;const {error}=await supabase.from('creator_monetization').upsert({user_id:user.id,status:'pending',enabled:false},{onConflict:'user_id'});monStatus.textContent=error?error.message:'Solicitação enviada para análise.'};
+logout.onclick=async()=>{await supabase.auth.signOut();location.href='/'};
+boot();
+</script></body></html>

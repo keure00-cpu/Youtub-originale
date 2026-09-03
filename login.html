@@ -1,0 +1,37 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Entrar — YouTube2</title><link rel="stylesheet" href="/assets/style.css"></head><body><main class="center"><section class="auth-card">
+<a class="logo auth-logo" href="/">YouTube<span>2</span></a><h1 id="heading">Entrar na sua conta</h1><p class="muted">Entre para criar seu canal e publicar vídeos.</p>
+<form id="authForm"><input id="displayName" class="optional" placeholder="Nome do canal" autocomplete="name"><input id="username" class="optional" placeholder="@username" autocomplete="username"><input id="email" type="email" placeholder="E-mail" required autocomplete="email"><input id="password" type="password" placeholder="Senha" required autocomplete="current-password"><button class="primary wide" id="submit">Entrar</button></form>
+<button class="linkbtn" id="toggle">Criar uma conta</button><button class="linkbtn" id="resend" style="display:none">Reenviar e-mail de confirmação</button><button class="linkbtn" id="forgot">Esqueci minha senha</button><p id="msg" class="muted"></p></section></main>
+<script type="module">
+import {supabase} from './assets/supabase.js';
+const form=document.getElementById('authForm'),toggle=document.getElementById('toggle'),heading=document.getElementById('heading'),submit=document.getElementById('submit'),msg=document.getElementById('msg'),displayName=document.getElementById('displayName'),username=document.getElementById('username'),email=document.getElementById('email'),password=document.getElementById('password'),resend=document.getElementById('resend'),forgot=document.getElementById('forgot');let signup=false;
+function ui(){heading.textContent=signup?'Criar sua conta':'Entrar na sua conta';submit.textContent=signup?'Criar conta':'Entrar';toggle.textContent=signup?'Já tenho uma conta':'Criar uma conta';resend.style.display=signup?'none':'inline-block';forgot.style.display=signup?'none':'inline-block';document.querySelectorAll('.optional').forEach(x=>x.style.display=signup?'block':'none')}ui();
+async function ensureChannel(user){
+  // A tabela channels é opcional. Se ela não existir, o login continua normalmente.
+  try{
+    const {data:c,error:readError}=await supabase.from('channels').select('id').eq('user_id',user.id).maybeSingle();
+    if(readError) return;
+    if(c) return;
+    const name=user.user_metadata?.display_name||'Canal YouTube2';
+    const handle=(user.user_metadata?.username||`user_${user.id.slice(0,8)}`).replace(/^@/,'');
+    await supabase.from('channels').insert({user_id:user.id,name,handle});
+  }catch{}
+}
+toggle.onclick=()=>{signup=!signup;msg.textContent='';ui()};
+form.onsubmit=async e=>{e.preventDefault();msg.textContent=signup?'Criando conta...':'Entrando...';submit.disabled=true;
+ try{
+  if(signup){
+   const {data,error}=await supabase.auth.signUp({email:email.value.trim(),password:password.value,options:{emailRedirectTo:location.origin+'/login.html',data:{display_name:displayName.value.trim()||'Usuário YouTube2',username:username.value.trim().replace(/^@/,'')||`user_${crypto.randomUUID().slice(0,8)}`}}});if(error)throw error;
+   if(data.user&&data.session){await ensureChannel(data.user);location.href='/channel.html'}else msg.textContent='Conta criada. Confirme o e-mail e depois entre novamente.';
+  }else{
+   const {data,error}=await supabase.auth.signInWithPassword({email:email.value.trim(),password:password.value});if(error)throw error;await ensureChannel(data.user);location.href='/channel.html';
+  }
+ }catch(err){const raw=String(err?.message||err);msg.textContent=raw.includes('Failed to fetch')?'Falha de conexão com o Supabase. Confirme se a URL e a chave pública deste projeto estão corretas e se o domínio da Vercel está liberado no Auth.':raw}
+ finally{submit.disabled=false}
+};
+resend.onclick=async()=>{const e=email.value.trim();if(!e){msg.textContent='Digite seu e-mail primeiro.';return}resend.disabled=true;try{const {error}=await supabase.auth.resend({type:'signup',email:e,options:{emailRedirectTo:location.origin+'/login.html'}});if(error)throw error;msg.textContent='E-mail de confirmação reenviado. Verifique também Spam/Lixo eletrônico.'}catch(err){msg.textContent=String(err.message||err)}finally{resend.disabled=false}};
+forgot.onclick=async()=>{const e=email.value.trim();if(!e){msg.textContent='Digite seu e-mail para receber o link de redefinição.';return}try{const {error}=await supabase.auth.resetPasswordForEmail(e,{redirectTo:location.origin+'/login.html?reset=1'});if(error)throw error;msg.textContent='Enviamos um link de recuperação. Verifique seu e-mail.'}catch(err){msg.textContent=String(err.message||err)}};
+
+const hash=new URLSearchParams(location.hash.replace(/^#/,'&')); if(hash.get('error_description')) msg.textContent=decodeURIComponent(hash.get('error_description'));
+const q=new URLSearchParams(location.search); if(q.get('reset')) msg.textContent='Use o fluxo de recuperação configurado no seu e-mail para definir uma nova senha.';
+</script></body></html>

@@ -1,0 +1,37 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Assistir — YouTube2</title><link rel="stylesheet" href="/assets/style.css"></head><body>
+<header class="topbar"><button class="icon-btn" onclick="history.back()">‹</button><a class="logo" href="/">YouTube<span>2</span></a><form class="search" id="search"><input id="q" placeholder="Pesquisar"><button>⌕</button></form><a class="login-btn" href="/login.html">Entrar</a></header>
+<main class="watch"><div id="player" class="player"></div><h1 id="title">Carregando...</h1><p id="meta" class="muted"></p><div class="watch-actions"><button id="like" class="secondary">👍 Curtir</button><button id="subscribe" class="secondary">Inscrever-se</button><button id="save" class="secondary">＋ Salvar</button><button id="share" class="secondary">↗ Compartilhar</button></div><p id="desc"></p><h2>Comentários</h2><textarea id="comment" rows="3" placeholder="Adicione um comentário..."></textarea><br><button id="commentBtn" class="primary" style="margin-top:8px">Comentar</button><div id="comments"></div></main>
+<script type="module">
+import {supabase} from './assets/supabase.js';
+const id=new URLSearchParams(location.search).get('id');let v,user;let counted=false;
+function getYouTubeId(value){try{const u=new URL(value.trim());const host=u.hostname.replace(/^www\./,'').replace(/^m\./,'');if(host==='youtu.be')return u.pathname.split('/').filter(Boolean)[0]||null;if(host==='youtube.com'){if(u.pathname==='/watch')return u.searchParams.get('v');if(u.pathname.startsWith('/shorts/'))return u.pathname.split('/')[2]||null;if(u.pathname.startsWith('/embed/'))return u.pathname.split('/')[2]||null}}catch{}return null}
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+async function load(){
+ if(!id)throw new Error('ID do vídeo ausente.');
+ const {data:{user:u}}=await supabase.auth.getUser(); user=u;
+ const {data,error}=await supabase.from('videos').select('*').eq('id',id).maybeSingle();
+ if(error)throw error; if(!data)throw new Error('Vídeo não encontrado.'); v=data;
+ let channelName='Canal YouTube2';
+ try{const {data:p}=await supabase.from('profiles').select('display_name,username').eq('id',v.user_id).maybeSingle();channelName=p?.display_name||channelName}catch{}
+ title.textContent=v.title; meta.textContent=`${channelName} • ${Number(v.views||0).toLocaleString('pt-BR')} visualizações${v.duration?' • '+v.duration:''}`; desc.textContent=v.description||'';
+ if(!v.video_url)throw new Error('Este vídeo ainda não possui link de reprodução.');
+ const ytId=v.youtube_id || (v.video_url.includes('youtube.com') || v.video_url.includes('youtu.be') ? getYouTubeId(v.video_url) : null);
+ if(ytId){
+   player.innerHTML=`<iframe width="100%" height="500" src="https://www.youtube.com/embed/${encodeURIComponent(ytId)}?rel=0" title="${esc(v.title)}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+ }else{
+   player.innerHTML=`<video id="video" src="${esc(v.video_url)}" controls playsinline preload="metadata" poster="${esc(v.thumbnail_url||'')}"></video>`;
+   const video=document.getElementById('video');
+   video.addEventListener('play',async()=>{if(!counted){counted=true;await supabase.rpc('increment_video_views',{p_video_id:id});}});
+ }
+ if(user) await supabase.from('watch_history').upsert({user_id:user.id,video_id:id,watched_at:new Date().toISOString()});
+}
+async function loadLike(){if(!user)return;const {data}=await supabase.from('likes').select('video_id').eq('user_id',user.id).eq('video_id',id).maybeSingle();like.textContent=data?'♥ Curtido':'👍 Curtir'}
+like.onclick=async()=>{if(!user){location='/login.html';return}const {data}=await supabase.from('likes').select('video_id').eq('user_id',user.id).eq('video_id',id).maybeSingle();if(data)await supabase.from('likes').delete().eq('user_id',user.id).eq('video_id',id);else await supabase.from('likes').insert({user_id:user.id,video_id:id});loadLike()};
+subscribe.onclick=async()=>{if(!user){location='/login.html';return}const owner=v.user_id;if(owner===user.id)return;const {data}=await supabase.from('subscriptions').select('*').eq('subscriber_id',user.id).eq('channel_user_id',owner).maybeSingle();if(data){await supabase.from('subscriptions').delete().eq('subscriber_id',user.id).eq('channel_user_id',owner);subscribe.textContent='Inscrever-se'}else{await supabase.from('subscriptions').insert({subscriber_id:user.id,channel_user_id:owner});subscribe.textContent='Inscrito ✓'}};
+save.onclick=async()=>{if(!user){location='/login.html';return}let {data:p}=await supabase.from('playlists').select('*').eq('user_id',user.id).order('created_at').limit(1);let pl=p?.[0];if(!pl){const r=await supabase.from('playlists').insert({user_id:user.id,name:'Assistir mais tarde'}).select().single();pl=r.data}if(pl)await supabase.from('playlist_items').upsert({playlist_id:pl.id,video_id:id});save.textContent='✓ Salvo'};
+share.onclick=async()=>{try{await navigator.clipboard.writeText(location.href);share.textContent='✓ Link copiado'}catch{prompt('Copie o link:',location.href)}};
+commentBtn.onclick=async()=>{if(!user){location='/login.html';return}const body=comment.value.trim();if(!body)return;const {error}=await supabase.from('comments').insert({user_id:user.id,video_id:id,body});if(error)alert(error.message);else{comment.value='';loadComments()}};
+async function loadComments(){const {data}=await supabase.from('comments').select('*').eq('video_id',id).order('created_at',{ascending:false});comments.innerHTML=(data||[]).map(c=>`<div class="comment"><b>Usuário</b><p>${esc(c.body)}</p></div>`).join('')}
+search.onsubmit=e=>{e.preventDefault();location.href='/?q='+encodeURIComponent(q.value)};
+load().then(()=>{loadLike();loadComments()}).catch(e=>{title.textContent='Não foi possível abrir o vídeo';desc.textContent=e.message||String(e)});
+</script></body></html>

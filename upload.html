@@ -1,0 +1,43 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Publicar vídeo — YouTube2</title><link rel="stylesheet" href="/assets/style.css"></head><body>
+<header class="topbar"><a class="logo" href="/">YouTube<span>2</span></a><div class="top-actions"><a class="login-btn" href="/creator.html">Studio</a></div></header>
+<main class="upload-card" style="margin:35px auto"><h1>Publicar vídeo</h1><p class="muted">Cole o link de um vídeo do YouTube. O YT2 não precisa armazenar o arquivo no Supabase Storage.</p>
+<form id="form"><input id="title" placeholder="Título do vídeo" required maxlength="120"><textarea id="description" rows="5" placeholder="Descrição"></textarea>
+<select id="category"><option>Todos</option><option>Música</option><option>Jogos</option><option>Tecnologia</option><option>Programação</option><option>Notícias</option><option>Ao vivo</option></select>
+<input id="youtubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=... ou https://youtu.be/..." required>
+<button class="secondary wide" type="button" id="previewBtn">▶ Pré-visualizar</button>
+<div id="preview" style="display:none;margin-top:15px"><img id="previewImg" style="width:100%;border-radius:12px;display:block"><p id="previewText" class="muted"></p></div>
+<button class="primary red wide" type="submit">Publicar vídeo</button></form><p id="msg" class="muted"></p></main>
+<script type="module">
+import {supabase} from './assets/supabase.js';
+const form=document.getElementById('form'),msg=document.getElementById('msg'),youtubeUrl=document.getElementById('youtubeUrl');
+function getYouTubeId(value){
+  try{
+    const u=new URL(value.trim());
+    const host=u.hostname.replace(/^www\./,'').replace(/^m\./,'');
+    if(host==='youtu.be') return u.pathname.split('/').filter(Boolean)[0]||null;
+    if(host==='youtube.com'){
+      if(u.pathname==='/watch') return u.searchParams.get('v');
+      if(u.pathname.startsWith('/shorts/')) return u.pathname.split('/')[2]||null;
+      if(u.pathname.startsWith('/embed/')) return u.pathname.split('/')[2]||null;
+    }
+  }catch{}
+  return null;
+}
+function thumb(id){return `https://i.ytimg.com/vi/${encodeURIComponent(id)}/hqdefault.jpg`}
+function validate(){const id=getYouTubeId(youtubeUrl.value);if(!id||!/^[A-Za-z0-9_-]{6,20}$/.test(id))throw new Error('Link do YouTube inválido. Use um link de vídeo do YouTube.');return id}
+previewBtn.onclick=()=>{try{const id=validate();preview.style.display='block';previewImg.src=thumb(id);previewText.textContent=`Vídeo do YouTube: ${id}`;msg.textContent='Link válido.'}catch(e){preview.style.display='none';msg.textContent=e.message}};
+async function ensureChannel(user){ return true; }
+form.onsubmit=async e=>{e.preventDefault();msg.textContent='Verificando conta...';
+ try{
+  const {data:{user}}=await supabase.auth.getUser();if(!user)throw new Error('Entre na sua conta primeiro.');
+  const id=validate();
+  const titleValue=title.value.trim();
+  if(!titleValue)throw new Error('Informe o título.');
+  const thumbnail=thumb(id);
+  msg.textContent='Salvando vídeo do YouTube no banco...';
+  const {error:db}=await supabase.from('videos').insert({user_id:user.id,title:titleValue,description:description.value.trim(),category:category.value,video_url:`https://www.youtube.com/watch?v=${id}`,thumbnail_url:thumbnail,duration:'',source_type:'youtube',youtube_id:id,published:true}).select().single();
+  if(db)throw new Error(`Banco: ${db.message}`);
+  msg.textContent='✓ Vídeo publicado com sucesso!';form.reset();preview.style.display='none';setTimeout(()=>location.href='/',900);
+ }catch(err){console.error(err);msg.textContent=err.message||String(err)}
+};
+</script></body></html>
